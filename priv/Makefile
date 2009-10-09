@@ -2,6 +2,9 @@ PROG='io:format("~s~n", [code:lib_dir(erl_interface)])'
 OTP_DIR=$(shell erl -eval $(PROG) -s init stop -noshell)
 LIB=-lsqlite3 -lerl_interface -lei
 FLAGS=-I$(OTP_DIR)/include -L$(OTP_DIR)/lib
+ifdef NOTEST
+FLAGS+=-DRELEASE
+endif
 GCC=/usr/bin/gcc
 
 all: obj

@@ -18,6 +18,7 @@ ifdef NOTEST
 EMAKE_SRC = Emakefile.release
 else
 EMAKE_SRC = Emakefile.devel
+NOTEST=
 endif
 
 all: compile docs
@@ -25,7 +26,7 @@ all: compile docs
 compile:
 	cp $(EMAKE_SRC) Emakefile
 	$(ERL) -make
-	cd priv && make
+	cd priv && make NOTEST=$(NOTEST)
 
 install: compile
 	mkdir -p $(INSTALL_DEST)/ebin

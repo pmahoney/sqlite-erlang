@@ -9,7 +9,9 @@
 
 #define MASTER_QUERY "select * from sqlite_master where type='table';"
 
+#ifndef RELEASE
 static FILE *log;
+#endif
 
 static ETERM *result;
 
@@ -25,9 +27,11 @@ static int list_tables(void *notUsed, int argc, char **argv, char **azColName)
     result = erl_mk_empty_list();
   }
   
+#ifndef RELEASE
   fprintf(log, "%d %s = %s\n", 2, azColName[2], argv[2]);
   fprintf(log, "\n");
   fflush(log);
+#endif
 
   result = erl_cons(erl_mk_atom(argv[2]), result);
 
@@ -45,9 +49,13 @@ static int callback(void *notUsed, int argc, char **argv, char **azColName)
 
   record_list = malloc(argc * sizeof(ETERM *));
   
+#ifndef RELEASE
   fprintf(log, "runs %d\n", argc);
+#endif
   for (i = 0; i < argc; i++) {
+#ifndef RELEASE
     fprintf(log, "%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
+#endif
     if (argv[i]) {
       record_list[i] = erl_mk_string(argv[i]);
     }
@@ -55,8 +63,10 @@ static int callback(void *notUsed, int argc, char **argv, char **azColName)
       record_list[i] = erl_mk_empty_list();
     }
   }
+#ifndef RELEASE
   fprintf(log, "\n");
   fflush(log);
+#endif
 
   result = erl_cons(erl_mk_tuple(record_list, argc), result);
 
@@ -74,9 +84,11 @@ int main(int argc, char **argv)
   char *zErrMsg = 0;
   int rc;
 
+#ifndef RELEASE
   log = fopen("/tmp/sqlite_port.log", "a+");
   fprintf(log, "******start log (%s)******\n", argv[1]);
   fflush(log);
+#endif
 
   rc = sqlite3_open(argv[1], &db);
   if (rc) {
@@ -92,14 +104,18 @@ int main(int argc, char **argv)
     argp = erl_element(2, tuplep);
     
     if (strncmp((const char *)ERL_ATOM_PTR(fnp), "close", 5) == 0) {
+#ifndef RELEASE
       fprintf(log, "closing sqlite3_close\n");
       fflush(log);
+#endif
 
       sqlite3_close(db);
       break;
     }
     else if (strncmp((const char *)ERL_ATOM_PTR(fnp), "list_tables", 11) == 0) {
+#ifndef RELEASE
       fprintf(log, "calling list_tables\n");
+#endif
 
       result = 0;
 
@@ -116,11 +132,15 @@ int main(int argc, char **argv)
 	send_ok();
       } 
 
+#ifndef RELEASE
       fflush(log);
+#endif
 
     }
     else if (strncmp((const char *)ERL_ATOM_PTR(fnp), "sql_exec", 8) == 0) {
+#ifndef RELEASE
       fprintf(log, "calling sqlite3_exec %s\n", erl_iolist_to_string(argp));
+#endif
 
       result = 0;
 
@@ -137,7 +157,9 @@ int main(int argc, char **argv)
 	send_ok();
       } 
 
+#ifndef RELEASE
       fflush(log);
+#endif
     }
 
     erl_free_compound(tuplep);
@@ -145,8 +167,10 @@ int main(int argc, char **argv)
     erl_free_term(argp);
   }
 
+#ifndef RELEASE
   fprintf(log, "******end log******\n");
   fclose(log);
+#endif
   return 0;
 }
       
@@ -159,7 +183,9 @@ void send_error(char *err_msg)
   tup_list[1] = erl_mk_string(err_msg);
   to_send = erl_mk_tuple(tup_list, 2);
 
+#ifndef RELEASE
   fprintf(log, "SQL Error: %s\n", err_msg);
+#endif
   respond(to_send);
 
   erl_free_term(tup_list[0]);
@@ -169,7 +195,9 @@ void send_error(char *err_msg)
 
 void send_result() 
 {
+#ifndef RELEASE
   fprintf(log, "returning at len %d\n", erl_term_len(result));
+#endif
   respond(result);
 	
   erl_free_compound(result);
@@ -181,7 +209,9 @@ void send_ok()
   ETERM *to_send;
 
   to_send = erl_mk_atom("ok");
+#ifndef RELEASE
   fprintf(log, "returning ok at len %d\n", erl_term_len(to_send));
+#endif
   respond(to_send);
   	
   erl_free_term(to_send);
@@ -195,7 +225,9 @@ void respond(ETERM *r)
   erl_encode(r, buf);
   write_cmd(buf, len);
 
+#ifndef RELEASE
   fprintf(log, "sending response back\n");
   fprintf(log, "%d bytes sent\n", len);
+#endif
   free(buf);
 }
