@@ -41,6 +41,7 @@ clean:
 	- rm -rf ct.db
 	- find . -name "*~" | xargs rm -f
 	cd priv && make clean
+	- rm Emakefile
 
 docs:
 	$(ERL) -noshell -run edoc_run application "'sqlite'" '"."' '[{title,"Welcome to sqlite"},{hidden,false},{private,false}]' -s erlang halt
