@@ -39,7 +39,7 @@ static:
 clean:
 	- rm -rf ebin/*.beam doc/* sqlite.plt src/test/*.beam
 	- rm -rf ct.db
-	find . -name "*~" | xargs rm
+	- find . -name "*~" | xargs rm -f
 	cd priv && make clean
 
 docs:
