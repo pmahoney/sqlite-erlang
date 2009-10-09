@@ -16,8 +16,8 @@ read_cmd(byte *buf)
   uint32_t len;
 
   if (read_exact(buf, sizeof(uint32_t)) != sizeof(uint32_t)) {
-    fprintf(stderr, "read_cmd() failed!\n");
-    return(-1);
+    /* fprintf(stderr, "read_cmd() failed!\n"); */
+    return(0);
   }
   memcpy(&len, buf, sizeof(uint32_t));
   len = ntohl(len);
