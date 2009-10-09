@@ -16,7 +16,7 @@ unit() ->
     unit(false,?ALL_MODS). % no tty output by default for your eye(s).
 
 %% does unit tests on modules
--spec(unit/2 :: (TTY :: bool(), Mods :: [atom()]) -> 'done').
+-spec(unit/2 :: (TTY :: boolean(), Mods :: [atom()]) -> 'done').
 unit(TTY, Mods) ->
     error_logger:tty(TTY),
     lists:foreach(fun(M) ->
