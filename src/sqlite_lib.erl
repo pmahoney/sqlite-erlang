@@ -12,10 +12,27 @@
 -export([col_type/1]).
 -export([write_value_sql/1, write_col_sql/1]).
 -export([create_table_sql/2, write_sql/2, read_sql/3, delete_sql/3, drop_table/1]). 
+-export([quote/1]).
 
 %%====================================================================
 %% API
 %%====================================================================
+quote(X) when is_integer(X) -> integer_to_list(X);
+quote(X) when is_float(X) -> float_to_list(X);
+quote(X) when is_binary(X) -> quote(binary_to_list(X));
+quote(X) when is_list(X) ->
+  lists:flatten(
+  io_lib:format(
+  "'~s'",
+  [
+    quote_quotes(X, "")
+  ]));
+quote(X) -> lists:flatten(io_lib:format("'~s'", [X])).
+
+quote_quotes([$'|Rest], Acc) -> quote_quotes(Rest, Acc ++ "''");
+quote_quotes([C|Rest], Acc) -> quote_quotes(Rest, Acc ++ [C]);
+quote_quotes([], Acc) -> Acc.
+
 %%--------------------------------------------------------------------
 %% @spec col_type(Type :: term()) -> term()
 %% @doc Maps sqlite column type.
@@ -47,13 +64,7 @@ col_type("DATE") ->
 %%--------------------------------------------------------------------
 -spec(write_value_sql/1::(any()) -> string()).
 write_value_sql(Values) ->
-    StrValues = lists:map(fun(X) when is_integer(X) ->
-				  integer_to_list(X);
-			     (X) when is_float(X) ->
-				  float_to_list(X);
-			     (X) ->
-				  io_lib:format("'~s'", [X])
-			  end, Values),
+    StrValues = lists:map(fun quote/1, Values),
     string:join(StrValues, ",").
 
 %%--------------------------------------------------------------------
@@ -150,3 +161,8 @@ drop_table(Tbl) ->
 %%%-------------------------------------------------------------------
 
 -include_lib("eunit/include/eunit.hrl").
+
+quote_test() ->
+  ?assertEqual("'quoteme'", quote("quoteme")),
+  ?assertEqual("'quoteme'''' fr''ed'", quote(<<"quoteme'' fr'ed">>)),
+  ?assertEqual("'quoteme'''' fr''ed'", quote("quoteme'' fr'ed")).
