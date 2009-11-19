@@ -12,7 +12,6 @@
 -export([col_type/1]).
 -export([write_value_sql/1, write_col_sql/1]).
 -export([create_table_sql/2, write_sql/2, read_sql/3, delete_sql/3, drop_table/1]). 
--export([quote/1]).
 
 %%====================================================================
 %% API
