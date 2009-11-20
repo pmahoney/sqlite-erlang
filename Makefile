@@ -30,7 +30,7 @@ compile:
 
 install: compile
 	mkdir -p $(INSTALL_DEST)/ebin
-	install ebin/sqlite.beam ebin/sqlite_lib.beam $(INSTALL_DEST)/ebin
+	install -m 644 ebin/sqlite.beam ebin/sqlite_lib.beam $(INSTALL_DEST)/ebin
 	mkdir -p $(INSTALL_DEST)/priv
 	install priv/sqlite_port $(INSTALL_DEST)/priv
 
