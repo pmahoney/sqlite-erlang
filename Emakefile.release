@@ -1,2 +1,2 @@
-{'src/sqlite_lib.erl',[{d, 'NOTEST'},{outdir,"ebin"}]}.
-{'src/sqlite.erl',[{d, 'NOTEST'},{outdir,"ebin"}]}.
+{'src/sqlite_lib.erl',[debug_info,{d, 'NOTEST'},{outdir,"ebin"}]}.
+{'src/sqlite.erl',[debug_info,{d, 'NOTEST'},{outdir,"ebin"}]}.
