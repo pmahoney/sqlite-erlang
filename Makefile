@@ -1,7 +1,7 @@
 ## usage:
 ## just "make" or "make NOTEST=true" for release build.
 
-VERSION=1.0.0
+VERSION=1.0.2
 
 ERL=$(shell which erl)
 ERLC=$(shell which erlc)

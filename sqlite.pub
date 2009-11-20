@@ -2,7 +2,7 @@
 {packager, {"Tee Teoh", "tty.erlang@gmail.com"}}.
 {category, ["database","driver"]}.
 {name, "sqlite"}.
-{vsn, "1.0.0"}.
+{vsn, "1.0.2"}.
 {depends, ["kernel","proplists","lists","string","stdlib"]}.
 {keywords, ["database","sqlite","driver"]}.
 {summary, "sqlite driver"}.
