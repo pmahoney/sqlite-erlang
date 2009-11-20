@@ -155,6 +155,7 @@ drop_table(Tbl) ->
 %% Internal functions
 %%====================================================================
 
+-ifndef(NOTEST).
 %%%-------------------------------------------------------------------
 %%% Tests
 %%%-------------------------------------------------------------------
@@ -165,3 +166,4 @@ quote_test() ->
   ?assertEqual("'quoteme'", quote("quoteme")),
   ?assertEqual("'quoteme'''' fr''ed'", quote(<<"quoteme'' fr'ed">>)),
   ?assertEqual("'quoteme'''' fr''ed'", quote("quoteme'' fr'ed")).
+-endif.

@@ -487,6 +487,7 @@ to_list(ok) ->
 to_list(L) ->
     L.
 
+-ifndef(NOTEST).
 %%%-------------------------------------------------------------------
 %%% Tests
 %%%-------------------------------------------------------------------
@@ -565,3 +566,4 @@ nonexistent_table_info_test_() ->
      [
       ?_assert(sqlite:table_info(ct, nonexistence) =:= [])
      ]}.
+-endif.
