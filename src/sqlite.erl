@@ -14,7 +14,7 @@
 -export([open/1, open/2]).
 -export([start_link/1, start_link/2]).
 -export([stop/0, close/1]).
--export([sql_exec/1, sql_exec/2]).
+-export([sql_exec/1, sql_exec/2, sql_exec/3]).
 
 -export([create_table/2, create_table/3]).
 -export([list_tables/0, list_tables/1, table_info/1, table_info/2]).
@@ -141,9 +141,16 @@ sql_exec(SQL) ->
 %%   result of the Sql call.
 %% @end
 %%--------------------------------------------------------------------
--spec(sql_exec/2::(atom(), string()) -> any()).
-sql_exec(Db, SQL) ->
-    gen_server:call(Db, {sql_exec, SQL}).
+-spec(sql_exec/2::(atom() | string(), string() | integer()) -> any()).
+sql_exec(SQL, Timeout) when is_list(SQL), is_integer(Timeout) ->
+    ?MODULE:sql_exec(?MODULE, SQL, Timeout);
+
+sql_exec(Db, SQL) when is_atom(Db), is_list(SQL) ->
+     gen_server:call(Db, {sql_exec, SQL}).
+ 
+-spec(sql_exec/3::(atom(), string(), integer()) -> any()).
+sql_exec(Db, SQL, Timeout) ->
+    gen_server:call(Db, {sql_exec, SQL}, Timeout).
 
 %%--------------------------------------------------------------------
 %% @spec create_table(Tbl::atom(), TblInfo::[tuple()]) -> term()
@@ -327,7 +334,7 @@ drop_table(Db, Tbl) ->
 -spec(init/1::([any()]) -> init_return()).
 init(Options) ->
     Dbase = proplists:get_value(db, Options),
-    Port = open_port({spawn, create_cmd(Dbase)}, [{packet, 2}, binary]),
+    Port = open_port({spawn, create_cmd(Dbase)}, [{packet, 4}, binary]),
     {ok, #state{port = Port, ops = Options}}.
 		     
 %%--------------------------------------------------------------------
@@ -353,13 +360,15 @@ handle_call({sql_exec, SQL}, _From, #state{port = Port} = State) ->
     {reply, Reply, State};
 handle_call(list_tables, _From, #state{port = Port} = State) ->
     Reply = exec(Port, {list_tables, none}),
-    {reply, Reply, State};
+    {reply, to_list(Reply), State};
 handle_call({table_info, Tbl}, _From, #state{port = Port} = State) ->
     % make sure we only get table info.
     % SQL Injection warning
     SQL = io_lib:format("select sql from sqlite_master where tbl_name = '~p' and type='table';", [Tbl]),
-    [{Info}] = exec(Port, {sql_exec, SQL}),
-    Reply = parse_table_info(Info),
+    Reply = case exec(Port, {sql_exec, SQL}) of
+		ok       -> [];
+		[{Info}] -> parse_table_info(Info)
+	    end,
     {reply, Reply, State};
 handle_call({create_table, Tbl, Options}, _From, #state{port = Port} = State) ->
     SQL = sqlite_lib:create_table_sql(Tbl, Options),
@@ -442,7 +451,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 create_cmd(Dbase) ->
-    filename:join([code:priv_dir(?MODULE), "sqlite_port "]) ++ Dbase.
+    filename:join([code:priv_dir(?MODULE), "sqlite_port"]) ++ " " ++ Dbase.
 
 exec(Port, Cmd) ->
     port_command(Port, term_to_binary(Cmd)),
@@ -459,8 +468,8 @@ exec(Port, Cmd) ->
 
 
 parse_table_info(Info) ->
-    [_, Tail] = string:tokens(Info, "()"),
-    Cols = string:tokens(Tail, ","), 
+    [_, Tail] = string:tokens(Info, "\n()"),
+    Cols = string:tokens(lists:flatten(Tail), ","), 
     build_table_info(lists:map(fun(X) ->
 				       string:tokens(X, " ") 
 			       end, Cols), []).
@@ -468,7 +477,92 @@ parse_table_info(Info) ->
 build_table_info([], Acc) -> 
     lists:reverse(Acc);
 build_table_info([[ColName, ColType] | Tl], Acc) -> 
-    build_table_info(Tl, [{list_to_atom(ColName), sqlite_lib:col_type(ColType)}| Acc]); 
+    build_table_info(Tl, [{list_to_atom(ColName), sqlite_lib:col_type(string:to_upper(ColType))}| Acc]);
 build_table_info([[ColName, ColType, "PRIMARY", "KEY"] | Tl], Acc) ->
-    build_table_info(Tl, [{list_to_atom(ColName), sqlite_lib:col_type(ColType)}| Acc]).
-    
+    build_table_info(Tl, [{list_to_atom(ColName), sqlite_lib:col_type(string:to_upper(ColType))}| Acc]).
+
+to_list(ok) -> 
+    [];
+to_list(L) ->
+    L.
+
+-ifndef(NOTEST).
+%%%-------------------------------------------------------------------
+%%% Tests
+%%%-------------------------------------------------------------------
+
+-include_lib("eunit/include/eunit.hrl").
+
+%% from ttyerl's original test
+create_table_test_() ->
+    {setup, 
+     fun() -> sqlite:open(ct) end,
+     fun({ok, _Pid}) -> ok = sqlite:drop_table(ct, user),
+			ok = sqlite:close(ct);
+	(_)          -> void
+     end,
+     [
+      ?_assert(sqlite:list_tables(ct) =:= []),
+      ?_assert(sqlite:create_table(ct, user, [{name, text}, {age, integer}, {wage, integer}]) =:= ok),
+      ?_assert(sqlite:list_tables(ct) =:= [user]),
+      ?_assert(sqlite:table_info(ct, user) =:= [{name, text}, {age, integer}, {wage, integer}]),
+      ?_assert(sqlite:write(ct, user, [{name, "abby"}, {age, 20}, {wage, 2000}]) =:= ok),
+      ?_assert(sqlite:write(ct, user, [{name, "marge"}, {age, 30}, {wage, 3000}]) =:= ok),
+      ?_assert(sqlite:sql_exec(ct, "select * from user order by name;") =:= [{"abby","20","2000"},{"marge","30","3000"}]),
+      ?_assert(sqlite:read(ct, user, {name, "abby"}) =:= [{"abby","20","2000"}]),
+      ?_assert(sqlite:delete(ct, user, {name, "abby"}) =:= ok)
+     ]}.
+
+%% kinda complex table (from ticket table of Trac)
+%% a test case for the patch in http://wiki.github.com/ttyerl/sqlite-erlang/a-patch-for-table_info
+table_info_test_() ->
+    {setup,
+     fun() -> sqlite:open(ct) end,
+     fun({ok, _Pid}) -> ok = sqlite:drop_table(ct, ticket),
+			ok = sqlite:close(ct);
+	(_)          -> void
+     end,
+
+     [
+      ?_assert(sqlite:sql_exec(ct, "CREATE TABLE ticket (id integer PRIMARY KEY, type text, time integer, changetime integer, component text, severity text, priority text, owner text, reporter text, cc text, version text, milestone text, status text, resolution text, summary text, description text, keywords text);") =:= ok),
+      ?_assert(sqlite:table_info(ct, ticket) =:= [{id, integer}, {type, text}, {time, integer}, {changetime, integer}, {component, text}, {severity, text}, {priority, text}, {owner, text}, {reporter, text}, {cc, text}, {version, text}, {milestone, text}, {status, text}, {resolution, text}, {summary, text}, {description, text}, {keywords, text}])
+     ]}.
+
+%% to fix the issue at http://github.com/mwpark/sqlite-erlang/issues#issue/1
+select_many_records_test_() ->
+    {setup,
+     fun() -> R = sqlite:open(ct),
+	      ok = sqlite:create_table(ct, foo, [{id, integer}, {name, text}]),
+	      ok = lists:foreach(fun(X) -> sqlite:write(ct, foo, [{id, X}, {name, "bar"}]) end, lists:seq(1, 1024)),
+	      R
+	      end,
+     fun({ok, _Pid}) -> ok = sqlite:drop_table(ct, foo),
+			ok = sqlite:close(ct);
+	(_)          -> void
+     end,
+     [
+      ?_assert(sqlite:read(ct, foo, {id, 1}) =:= [{"1", "bar"}]),
+      ?_assert(length(sqlite:sql_exec(ct, "select * from foo limit 10;")) =:= 10), 
+      ?_assert(length(sqlite:sql_exec(ct, "select * from foo limit 100;")) =:= 100), 
+      ?_assert(length(sqlite:sql_exec(ct, "select * from foo limit 1000;")) =:= 1000), 
+      ?_assert(length(sqlite:sql_exec(ct, "select * from foo;")) =:= 1024)
+     ]}.
+
+%% http://github.com/mwpark/sqlite-erlang/issues#issue/3
+nonexistent_table_info_test_() ->
+    {setup,
+     %% setup
+     fun() -> R = sqlite:open(ct),
+	      ok = sqlite:sql_exec(ct, "begin"),
+	      ok = sqlite:sql_exec(ct, "commit"),
+	      R
+     end,
+     %% cleanup
+     fun({ok, _Pid}) -> sqlite:close(ct);
+	(_)          -> void
+     end,
+     %% tests
+     [
+      ?_assert(sqlite:table_info(ct, nonexistence) =:= [])
+     ]}.
+-endif.

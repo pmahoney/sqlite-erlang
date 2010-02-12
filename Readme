@@ -7,24 +7,25 @@ Compiling
 
 3. Run 'make static' for dialyzer
 
+4. Run 'make NOTEST=true' for release build.
 
 Running Test Suite
 ------------------
 
-$ROOT refers to the parent directory for sqlite-1.0.0
+Run 'make test' for unit testing.
 
-1. Add $ROOT/sqlite-1.0.0/priv in your path.
+Install
+-------
 
-2. erl -pa $ROOT/sqlite-1.0.0/ebin
+1. Run 'make clean' to remove previous build w/ debug info and tests.
 
-3. ct:run("src").
-
+2. Run 'make NOTEST=true install' as root.
 
 Example Usage
 -------------
 
-Use sqlite-1.0.0/src/test/sqlite_test_SUITE.erl as an example for your own usage. Look at both 
-init_per_testcase and create_table.
+*.erl file has its unit test case function(s).
+eunit test function ends with '_test_'.
 
 
-Author: tty.erlang@gmail.com
+Author: tty.erlang@gmail.com, manywaypark@gmail.com

@@ -2,39 +2,40 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
+#include <arpa/inet.h>
 
 #include "erl_comm.h"
 
-int read_exact(byte *buf, int len);
-int write_exact(byte *buf, int len);
+uint32_t read_exact(byte *buf, uint32_t len);
+uint32_t write_exact(byte *buf, uint32_t len);
 
-int
+uint32_t
 read_cmd(byte *buf)
 {
-  int len;
+  uint32_t len;
 
-  if (read_exact(buf, 2) != 2)
-    return(-1);
-  len = (buf[0] << 8) | buf[1];
+  if (read_exact(buf, sizeof(uint32_t)) != sizeof(uint32_t)) {
+    /* fprintf(stderr, "read_cmd() failed!\n"); */
+    return(0);
+  }
+  memcpy(&len, buf, sizeof(uint32_t));
+  len = ntohl(len);
   return read_exact(buf, len);
 }
 
-int
-write_cmd(byte *buf, int len)
+uint32_t
+write_cmd(byte *buf, uint32_t len)
 {
-  byte li;
-
-  li = (len >> 8) & 0xff;
-  write_exact(&li, 1);
-  
-  li = len & 0xff;
-  write_exact(&li, 1);
-
+  /* 1st, write the length of buf */
+  uint32_t len_n = htonl(len);	/* len in network order */
+  write_exact((byte *)&len_n, sizeof(uint32_t));
+  /* 2nd, write the buf */
   return write_exact(buf, len);
 }
 
-int
-read_exact(byte *buf, int len)
+uint32_t
+read_exact(byte *buf, uint32_t len)
 {
   int i, got=0;
 
@@ -43,12 +44,12 @@ read_exact(byte *buf, int len)
       return(i);
     got += i;
   } while (got<len);
-
+  /* fprintf(stderr, "read_exact: read %d bytes.\n", len); */
   return(len);
 }
 
-int
-write_exact(byte *buf, int len)
+uint32_t
+write_exact(byte *buf, uint32_t len)
 {
   int i, wrote = 0;
 
