@@ -442,7 +442,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 create_cmd(Dbase) ->
-    "sqlite_port " ++ Dbase.
+    filename:join([code:priv_dir(?MODULE), "sqlite_port "]) ++ Dbase.
 
 exec(Port, Cmd) ->
     port_command(Port, term_to_binary(Cmd)),
