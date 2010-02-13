@@ -8,9 +8,9 @@ ERLC=$(shell which erlc)
 BASE_PROG='io:format("~s~n", [code:lib_dir()])'
 BASE=$(shell erl -eval $(BASE_PROG) -s init stop -noshell)
 
-DEPS="[kernel, stdlib, crypto, compiler, syntax_tools, hipe]"
-PROG='lists:foreach(fun(M) -> io:format("~s", [code:lib_dir(M)]) end)'
-PATHS=`erl -eval '$(PROG)' -s init stop -noshell`
+DEPS=[kernel, stdlib, crypto, compiler, syntax_tools, hipe]
+PROG='lists:foreach(fun(M) -> io:format("~s ", [code:lib_dir(M)]) end, $(DEPS))'
+PATHS=$(shell erl -eval $(PROG) -s init stop -noshell)
 
 INSTALL_DEST=$(BASE)/sqlite-$(VERSION)
 
