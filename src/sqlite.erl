@@ -372,7 +372,7 @@ handle_call({table_info, Tbl}, _From, #state{port = Port} = State) ->
     {reply, Reply, State};
 handle_call({create_table, Tbl, Options}, _From, #state{port = Port} = State) ->
     SQL = sqlite_lib:create_table_sql(Tbl, Options),
-    Cmd = {sql_exec, SQL},
+    Cmd = {sql_exec, iolist_to_binary(SQL)},
     Reply = exec(Port, Cmd),
     {reply, Reply, State};
 handle_call({write, Tbl, Data}, _From, #state{port = Port} = State) ->
@@ -473,18 +473,88 @@ exec(Port, Cmd) ->
 
 
 parse_table_info(Info) ->
-    [_, Tail] = string:tokens(Info, "\n()"),
-    Cols = string:tokens(lists:flatten(Tail), ","), 
+    [Tail] = nested_tokens(Info, $(, $)),
+    Cols = string:tokens(Tail, ","),
     build_table_info(lists:map(fun(X) ->
 				       string:tokens(X, " ") 
-			       end, Cols), []).
+			       end,
+                               Cols)).
+
+%%---------------------------------------------------------------------
+%% @doc Tokenize a string only taking "level 1" pieces delimited by
+%% different open and close delimiter chars (e.g. $( and $) ).  For
+%% example, nested_tokens("outside, (text1) (text2(nested)) outside", $(, $))
+%% has the value ["text1", "text2(nested)"].
+%%
+%% Any text preceding the first opening delimeter or following the
+%% last closing delimeter is discarded.  Note this includes "dangling"
+%% unclosed text.
+%% ---------------------------------------------------------------------
+-spec(nested_tokens/3::(string(), integer(), integer()) -> [string()]).
+nested_tokens(Str, Open, Close) when Open /= Close ->
+    nested_tokens(Str, Open, Close, 0, [], []).
+
+nested_tokens([], _Open, _Close, _Depth, _Token, Tokens) ->
+    lists:reverse(Tokens);
+nested_tokens([Open|Str], Open, Close, 0, _Token, Tokens) ->
+   nested_tokens(Str, Open, Close, 1, [], Tokens);
+nested_tokens([Open|Str], Open, Close, Depth, Token, Tokens) ->
+    nested_tokens(Str, Open, Close, Depth+1, [Open|Token], Tokens);
+nested_tokens([Close|Str], Open, Close, 1, Token, Tokens) ->
+    nested_tokens(Str, Open, Close, 0, [], [lists:reverse(Token)|Tokens]);
+nested_tokens([Close|Str], Open, Close, Depth, Token, Tokens) ->
+    nested_tokens(Str, Open, Close, Depth-1, [Close|Token], Tokens);
+nested_tokens([C|Str], Open, Close, Depth, Token, Tokens) ->
+    nested_tokens(Str, Open, Close, Depth, [C|Token], Tokens).
+    
+
+build_table_info(Info) ->
+    build_table_info(Info, []).
    
 build_table_info([], Acc) -> 
     lists:reverse(Acc);
-build_table_info([[ColName, ColType] | Tl], Acc) -> 
-    build_table_info(Tl, [{list_to_atom(ColName), sqlite_lib:col_type(string:to_upper(ColType))}| Acc]);
-build_table_info([[ColName, ColType, "PRIMARY", "KEY"] | Tl], Acc) ->
-    build_table_info(Tl, [{list_to_atom(ColName), sqlite_lib:col_type(string:to_upper(ColType))}| Acc]).
+build_table_info([[ColName, ColType] | Tl], Acc) ->
+    ColDef = {list_to_atom(ColName),
+              sqlite_lib:col_type(string:to_upper(ColType))},
+    build_table_info(Tl, [ColDef|Acc]);
+build_table_info([[ColName|[ColType|Constraints]] | Tl], Acc) ->
+    ColDef = {list_to_atom(ColName),
+              sqlite_lib:col_type(string:to_upper(ColType)),
+              build_column_constraint_info(Constraints)},
+    build_table_info(Tl, [ColDef|Acc]).
+
+build_column_constraint_info(Constraints) ->
+    build_column_constraint_info(Constraints, []).    
+
+build_column_constraint_info([], Acc) ->
+    lists:reverse(Acc);
+build_column_constraint_info(["PRIMARY", "KEY" |Rest], Acc) ->
+    build_primary_key_opts_info(Rest, Acc);
+build_column_constraint_info(["NOT", "NULL" |Rest], Acc) ->
+    build_column_constraint_info(Rest, [not_null|Acc]);
+build_column_constraint_info(["UNIQUE"|Rest], Acc) ->
+    build_column_constraint_info(Rest, [unique|Acc]);
+build_column_constraint_info(["REFERENCES", FT, FC |Rest], Acc) ->
+    [Col] = nested_tokens(FC, $(, $)),
+    build_column_constraint_info(Rest, [{references,
+                                         list_to_atom(FT),
+                                         list_to_atom(Col)}|Acc]).
+
+build_primary_key_opts_info(Opts, Acc) ->
+    build_primary_key_opts_info(Opts, [], Acc).
+
+build_primary_key_opts_info(["ASC"|Rest], PKAcc, Acc) ->
+    build_primary_key_opts_info(Rest, [asc|PKAcc], Acc);
+build_primary_key_opts_info(["DESC"|Rest], PKAcc, Acc) ->
+    build_primary_key_opts_info(Rest, [asc|PKAcc], Acc);
+build_primary_key_opts_info(["AUTOINCREMENT"|Rest], PKAcc, Acc) ->
+    build_primary_key_opts_info(Rest, [autoincrement|PKAcc], Acc);
+build_primary_key_opts_info(Other, [], Acc) ->
+    build_column_constraint_info(Other, [primary_key|Acc]);
+build_primary_key_opts_info(Other, PKAcc, Acc) ->
+    build_column_constraint_info(Other,
+                                [{primary_key, lists:reverse(PKAcc)}|Acc]).
+                                                                        
 
 to_list(ok) -> 
     [];
@@ -530,8 +600,43 @@ table_info_test_() ->
 
      [
       ?_assert(sqlite:sql_exec(ct, "CREATE TABLE ticket (id integer PRIMARY KEY, type text, time integer, changetime integer, component text, severity text, priority text, owner text, reporter text, cc text, version text, milestone text, status text, resolution text, summary text, description text, keywords text);") =:= ok),
-      ?_assert(sqlite:table_info(ct, ticket) =:= [{id, integer}, {type, text}, {time, integer}, {changetime, integer}, {component, text}, {severity, text}, {priority, text}, {owner, text}, {reporter, text}, {cc, text}, {version, text}, {milestone, text}, {status, text}, {resolution, text}, {summary, text}, {description, text}, {keywords, text}])
+      ?_assertEqual([{id, integer, [primary_key]}, {type, text}, {time, integer}, {changetime, integer}, {component, text}, {severity, text}, {priority, text}, {owner, text}, {reporter, text}, {cc, text}, {version, text}, {milestone, text}, {status, text}, {resolution, text}, {summary, text}, {description, text}, {keywords, text}],
+                    sqlite:table_info(ct, ticket))
      ]}.
+
+table_info_constraint_test_() ->
+    {setup,
+     fun() -> sqlite:open(ct) end,
+     fun({ok, _Pid}) -> ok = sqlite:drop_table(ct, user),
+                        ok = sqlite:drop_table(ct, wage),
+			ok = sqlite:close(ct);
+	(_)          -> void
+     end,
+
+     [
+      ?_assert([] =:= sqlite:list_tables(ct)),
+      ?_assert(ok =:= sqlite:create_table(
+                        ct, user,
+                        [{id, integer, [primary_key, not_null]},
+                         {name, text},
+                         {age, integer}])),
+      ?_assert(ok =:= sqlite:create_table(
+                        ct, wage,
+                        [{id, integer, [primary_key, not_null]},
+                         {user,integer, [{references, user, id}, not_null]},
+                         {wage, integer}])),
+               
+      ?_assertEqual([user, wage], sqlite:list_tables(ct)),
+      ?_assertEqual([{id, integer, [primary_key, not_null]},
+                     {name, text},
+                     {age, integer}],
+                    sqlite:table_info(ct, user)),
+      ?_assertEqual([{id, integer, [primary_key, not_null]},
+                     {user, integer, [{references, user, id}, not_null]},
+                     {wage, integer}],
+                    sqlite:table_info(ct, wage))
+     ]}.
+              
 
 %% to fix the issue at http://github.com/mwpark/sqlite-erlang/issues#issue/1
 select_many_records_test_() ->

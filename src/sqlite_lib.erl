@@ -84,15 +84,81 @@ write_col_sql(Cols) ->
 %%       Type = string()
 %% @doc Generates a table create stmt in SQL.
 %%--------------------------------------------------------------------
--spec(create_table_sql/2::(atom(), [{atom(), string()}]) -> string()).
-create_table_sql(Tbl, [{ColName, Type} | Tl]) ->
-    CT = io_lib:format("CREATE TABLE ~p ", [Tbl]),
-    Start = io_lib:format("(~p ~s PRIMARY KEY, ", [ColName, sqlite_lib:col_type(Type)]),
-    End = string:join(
-	    lists:map(fun({Name0, Type0}) ->
-			      io_lib:format("~p ~s", [Name0, sqlite_lib:col_type(Type0)])
-		      end, Tl), ", ") ++ ");",
-    lists:flatten(CT ++ Start ++ End).
+-type(primary_key_opts() :: asc | desc | autoincrement).
+-type(column_constraint() ::
+      primary_key |
+      {primary_key, [Opts::primary_key_opts()]} |
+      not_null |
+      unique |
+      {default, Term::any()} |
+      {references, ForeignTable::atom()} |
+      {references, ForeignTable::atom(), ForeignColumn::atom()}).
+-type(column_def() ::
+      {Name::atom(), Type::atom()} |
+      {Name::atom(), Type::atom(), [Option::column_constraint()]}).
+-spec(create_table_sql/2::(atom(), [Col::column_def()]) -> iolist()).
+create_table_sql(Name, Cols) ->
+    [io_lib:format("CREATE TABLE ~p", [Name]),
+     " (",
+     string:join(lists:map(fun create_column_sql/1, Cols),
+                 ", "),
+     ");"].
+
+%%---------------------------------------------------------------------
+%% @doc Join a list as in string:join/2 but skip any empty list elements.
+%%---------------------------------------------------------------------
+-spec(join_skip_empty/2::([Term::any()], Sep::string()) -> [JoinTerm::any()]).
+join_skip_empty(List, Sep) ->
+    string:join(lists:filter(fun(E) -> E /= [] end, List),
+                Sep).
+
+%%---------------------------------------------------------------------
+%% @doc Generates a column-def fragment in SQL.
+%%---------------------------------------------------------------------
+-spec(create_column_sql/1::(Col::column_def()) -> string()).
+
+create_column_sql({Name, Type}) ->
+    create_column_sql({Name, Type, []});
+create_column_sql({Name, Type, Constraints}) ->
+    List = [io_lib:format("~p ~s", [Name,col_type(Type)]),
+            string:join(
+              lists:map(fun create_column_constraint_sql/1,
+                        Constraints),
+              " ")],
+    lists:flatten(join_skip_empty(List, " ")).
+
+%%---------------------------------------------------------------------
+%% @doc Generates a column-constraint fragment in SQL.
+%%---------------------------------------------------------------------
+create_column_constraint_sql(primary_key) ->
+    create_column_constraint_sql({primary_key, []});
+create_column_constraint_sql({primary_key, Opts}) ->
+    List = ["PRIMARY KEY",
+            
+            case proplists:get_bool(autoincrement, Opts) of
+                true -> "AUTOINCREMENT";
+                false -> []
+            end,
+
+            case proplists:get_bool(asc, Opts) of
+                true -> "ASC";
+                false ->
+                    case proplists:get_bool(desc, Opts) of
+                        true -> "DESC";
+                        false -> []
+                    end
+            end],
+    lists:flatten(join_skip_empty(List, " "));
+create_column_constraint_sql(not_null) ->
+    "NOT NULL";
+create_column_constraint_sql(unique) ->
+    "UNIQUE";
+create_column_constraint_sql({default, Term}) ->
+    io_lib:format("DEFAULT ~s", [quote(Term)]);
+create_column_constraint_sql({references, ForeignTable, ForeignColumn}) ->
+    io_lib:format("REFERENCES ~p (~p)", [ForeignTable, ForeignColumn]);
+create_column_constraint_sql({references, ForeignTable}) ->
+    io_lib:format("REFERENCES ~p", [ForeignTable]).
 
 %%--------------------------------------------------------------------
 %% @spec write_sql(Tbl, Data) -> string()
@@ -166,4 +232,18 @@ quote_test() ->
   ?assertEqual("'quoteme'", quote("quoteme")),
   ?assertEqual("'quoteme'''' fr''ed'", quote(<<"quoteme'' fr'ed">>)),
   ?assertEqual("'quoteme'''' fr''ed'", quote("quoteme'' fr'ed")).
+
+column_test() ->
+    ?assertEqual("name INTEGER", create_column_sql({name, integer})),
+    ?assertEqual("name INTEGER PRIMARY KEY",
+                 create_column_sql({name, integer, [primary_key]})),
+    ?assertEqual("name INTEGER NOT NULL",
+                 create_column_sql({name, integer, [not_null]})),
+    ?assertEqual("name INTEGER DEFAULT 7",
+                 create_column_sql({name, integer, [{default, 7}]})),
+    ?assertEqual("name INTEGER PRIMARY KEY NOT NULL",
+                 create_column_sql({name, integer, [primary_key, not_null]})),
+    ?assertEqual("name INTEGER REFERENCES t2 (c2)",
+                 create_column_sql({name, integer, [{references, t2, c2}]})).
+
 -endif.
